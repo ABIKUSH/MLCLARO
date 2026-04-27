@@ -1,0 +1,2080 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MLClaro — Sabé cuánto ganás</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg:        #07130e;
+  --surface:   #0d2318;
+  --surface2:  #152e20;
+  --surface3:  #1e4030;
+  --brand:     #1a4a3a;
+  --brand-h:   #235e4a;
+  --accent:    #f5c842;
+  --accent-d:  #c9a020;
+  --text:      #e0f0e8;
+  --muted:     #7a9e8a;
+  --dim:       #3d6e52;
+  --error:     #e05555;
+  --warn:      #f5a742;
+  --ok:        #4cb87a;
+  --radius:    16px;
+  --radius-s:  10px;
+  --radius-xs: 6px;
+  --nav-h:     68px;
+  --ease-spring: cubic-bezier(0.34,1.56,0.64,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;font-size:16px;overflow:hidden}
+h1,h2,h3,h4,h5{font-family:'Space Grotesk',sans-serif}
+button{font-family:'Nunito',sans-serif;cursor:pointer;border:none;outline:none;background:none}
+input,select,textarea{font-family:'Nunito',sans-serif;outline:none;border:none}
+a{color:inherit;text-decoration:none}
+
+/* ── Layout ─────────────────────────────────────────── */
+#app{
+  position:fixed;inset:0;
+  display:flex;flex-direction:column;
+  max-width:430px;margin:0 auto;
+  overflow:hidden;
+}
+.screen{
+  position:absolute;inset:0;
+  overflow-y:auto;overflow-x:hidden;
+  padding-bottom:calc(var(--nav-h) + 16px);
+  opacity:0;pointer-events:none;
+  transform:translateY(12px);
+  transition:opacity .25s ease, transform .25s ease;
+  -webkit-overflow-scrolling:touch;
+}
+.screen.active{opacity:1;pointer-events:all;transform:translateY(0)}
+.screen.no-nav{padding-bottom:0}
+
+/* ── Toast ───────────────────────────────────────────── */
+#toast-wrap{
+  position:fixed;bottom:calc(var(--nav-h)+12px);left:50%;
+  transform:translateX(-50%);
+  z-index:9999;width:calc(100% - 32px);max-width:398px;
+  pointer-events:none;
+}
+.toast{
+  background:var(--surface2);color:var(--text);
+  font-size:.875rem;font-weight:600;
+  padding:12px 16px;border-radius:12px;margin-bottom:8px;
+  border-left:3px solid var(--ok);
+  transform:translateY(16px);opacity:0;
+  transition:all .3s var(--ease-spring);
+  pointer-events:none;
+}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.err{border-color:var(--error)}
+.toast.warn{border-color:var(--warn)}
+
+/* ── Loading overlay ─────────────────────────────────── */
+#loading{
+  position:fixed;inset:0;z-index:8888;
+  background:rgba(7,19,14,.85);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;
+  transition:opacity .2s ease;
+}
+#loading.show{opacity:1;pointer-events:all}
+.spinner-ring{
+  width:44px;height:44px;
+  border:3px solid var(--surface3);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Shimmer ─────────────────────────────────────────── */
+.shimmer{
+  background:linear-gradient(90deg,var(--surface) 25%,var(--surface2) 50%,var(--surface) 75%);
+  background-size:200% 100%;
+  animation:shimmer 1.5s infinite;
+  border-radius:var(--radius-s);
+}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+
+/* ── Buttons ─────────────────────────────────────────── */
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  width:100%;padding:15px 20px;border-radius:var(--radius);
+  font-size:1rem;font-weight:700;
+  transition:transform .1s ease, opacity .1s ease, background .15s ease;
+}
+.btn:active{transform:scale(0.97)}
+.btn-primary{background:var(--accent);color:#07130e}
+.btn-primary:hover{background:var(--accent-d)}
+.btn-secondary{background:var(--surface2);color:var(--text)}
+.btn-secondary:hover{background:var(--surface3)}
+.btn-ghost{background:transparent;color:var(--muted);border:1.5px solid var(--surface3)}
+.btn-ghost:hover{border-color:var(--muted);color:var(--text)}
+.btn-danger{background:rgba(224,85,85,.12);color:var(--error);border:1.5px solid rgba(224,85,85,.3)}
+.btn-sm{padding:10px 16px;font-size:.875rem;border-radius:var(--radius-s)}
+.btn:disabled{opacity:.4;pointer-events:none}
+
+/* ── Inputs ──────────────────────────────────────────── */
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.field label{font-size:.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.field input,.field select,.field textarea{
+  background:var(--surface2);color:var(--text);
+  border:1.5px solid var(--surface3);border-radius:var(--radius-s);
+  padding:13px 14px;font-size:.975rem;width:100%;
+  transition:border-color .2s ease;
+  -webkit-appearance:none;appearance:none;
+}
+.field input:focus,.field select:focus{border-color:var(--accent);background:var(--surface3)}
+.field input::placeholder{color:var(--dim)}
+.field select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a9e8a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* ── Cards ───────────────────────────────────────────── */
+.card{
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);padding:16px;
+  transition:transform .2s var(--ease-spring);
+}
+.card:active{transform:scale(0.98)}
+
+/* ── Badges ──────────────────────────────────────────── */
+.badge{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:.7rem;font-weight:700;letter-spacing:.04em;
+  padding:3px 8px;border-radius:20px;
+  font-family:'Space Grotesk',sans-serif;
+}
+.badge-est{background:rgba(245,167,66,.15);color:var(--warn)}
+.badge-ver{background:rgba(76,184,122,.15);color:var(--ok)}
+.badge-info{background:rgba(26,74,58,.4);color:var(--muted)}
+
+/* ── Section title ───────────────────────────────────── */
+.section-title{
+  font-family:'Space Grotesk',sans-serif;
+  font-size:.75rem;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.06em;
+  margin-bottom:12px;
+}
+
+/* ── Pills ───────────────────────────────────────────── */
+.pills{display:flex;gap:8px}
+.pill{
+  flex:1;padding:10px 8px;border-radius:var(--radius-s);
+  font-size:.875rem;font-weight:700;text-align:center;
+  background:var(--surface2);color:var(--muted);
+  border:1.5px solid var(--surface3);
+  transition:all .15s var(--ease-spring);cursor:pointer;
+}
+.pill:active{transform:scale(0.97)}
+.pill.active{background:rgba(245,200,66,.12);color:var(--accent);border-color:rgba(245,200,66,.4)}
+
+/* ── Progress bar ────────────────────────────────────── */
+.progress-track{
+  height:8px;background:var(--surface3);border-radius:4px;overflow:hidden;margin:8px 0;
+}
+.progress-fill{
+  height:100%;border-radius:4px;
+  background:linear-gradient(90deg,var(--brand-h),var(--accent));
+  transition:width .6s var(--ease-spring);
+}
+
+/* ══════════════════════════════════════════════════════
+   AUTH SCREEN
+══════════════════════════════════════════════════════ */
+#screen-auth{
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:flex-start;
+  padding:0 24px 32px;background:var(--bg);
+}
+.auth-hero{
+  width:100%;padding:56px 0 32px;text-align:center;
+}
+.auth-logo{
+  font-family:'Space Grotesk',sans-serif;
+  font-size:2.25rem;font-weight:700;color:var(--accent);
+  letter-spacing:-.02em;margin-bottom:6px;
+}
+.auth-tagline{font-size:.95rem;color:var(--muted);line-height:1.4}
+.auth-card{
+  width:100%;background:var(--surface);
+  border:1px solid var(--surface3);border-radius:var(--radius);
+  padding:24px;
+}
+.auth-tabs{display:flex;gap:4px;background:var(--surface2);border-radius:var(--radius-s);padding:4px;margin-bottom:24px}
+.auth-tab{
+  flex:1;padding:9px;border-radius:8px;
+  font-size:.875rem;font-weight:700;color:var(--muted);
+  transition:all .2s ease;cursor:pointer;
+}
+.auth-tab.active{background:var(--surface3);color:var(--text)}
+.auth-divider{text-align:center;color:var(--dim);font-size:.8rem;margin:16px 0;position:relative}
+.auth-divider::before,.auth-divider::after{
+  content:'';position:absolute;top:50%;width:42%;height:1px;background:var(--surface3);
+}
+.auth-divider::before{left:0}.auth-divider::after{right:0}
+
+/* ══════════════════════════════════════════════════════
+   ONBOARDING
+══════════════════════════════════════════════════════ */
+#screen-onboarding{padding:0;background:var(--bg)}
+.wizard-header{
+  padding:24px 24px 0;display:flex;align-items:center;gap:16px;
+}
+.wizard-back{color:var(--muted);font-size:1.3rem;padding:4px}
+.wizard-back:active{transform:scale(0.9)}
+.wizard-prog-wrap{flex:1}
+.wizard-prog-label{font-size:.75rem;color:var(--muted);margin-bottom:6px}
+.wizard-prog-track{height:4px;background:var(--surface3);border-radius:2px}
+.wizard-prog-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .4s var(--ease-spring)}
+.wizard-body{padding:24px;animation:slideUp .3s var(--ease-spring)}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.wizard-title{font-size:1.6rem;font-weight:700;margin-bottom:6px;color:var(--text)}
+.wizard-sub{font-size:.95rem;color:var(--muted);margin-bottom:28px;line-height:1.5}
+.wizard-footer{
+  position:sticky;bottom:0;
+  padding:16px 24px;background:linear-gradient(transparent,var(--bg) 40%);
+}
+.gastos-total{
+  background:var(--surface2);border:1px solid var(--surface3);
+  border-radius:var(--radius-s);padding:14px 16px;
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:16px;
+}
+.gastos-total-label{font-size:.85rem;color:var(--muted);font-weight:600}
+.gastos-total-value{font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700;color:var(--accent)}
+.ml-connect-box{
+  background:var(--surface);border:1.5px dashed var(--surface3);
+  border-radius:var(--radius);padding:32px 24px;text-align:center;
+  margin-bottom:20px;
+}
+.ml-connect-icon{font-size:2.5rem;margin-bottom:12px}
+.ml-connect-title{font-family:'Space Grotesk',sans-serif;font-size:1.1rem;font-weight:600;margin-bottom:8px}
+.ml-connect-desc{font-size:.875rem;color:var(--muted);line-height:1.5;margin-bottom:20px}
+.ml-connected-chip{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(76,184,122,.12);border:1px solid rgba(76,184,122,.3);
+  border-radius:20px;padding:8px 16px;color:var(--ok);
+  font-size:.875rem;font-weight:700;margin-bottom:12px;
+}
+.listo-summary{
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);overflow:hidden;margin-bottom:20px;
+}
+.listo-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 16px;border-bottom:1px solid var(--surface3);
+}
+.listo-row:last-child{border-bottom:none}
+.listo-key{font-size:.875rem;color:var(--muted)}
+.listo-val{font-size:.875rem;font-weight:700;color:var(--text)}
+
+/* ══════════════════════════════════════════════════════
+   BOTTOM NAV
+══════════════════════════════════════════════════════ */
+#bottom-nav{
+  position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:430px;
+  height:var(--nav-h);
+  background:var(--surface);border-top:1px solid var(--surface3);
+  display:flex;align-items:stretch;
+  z-index:100;
+  opacity:0;pointer-events:none;
+  transition:opacity .25s ease;
+}
+#bottom-nav.show{opacity:1;pointer-events:all}
+.nav-item{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;
+  color:var(--dim);font-size:.68rem;font-weight:700;
+  letter-spacing:.02em;
+  transition:color .15s ease;cursor:pointer;
+  padding-bottom:4px;
+}
+.nav-item:active{transform:scale(0.92)}
+.nav-item .nav-icon{font-size:1.3rem;transition:transform .2s var(--ease-spring)}
+.nav-item.active{color:var(--accent)}
+.nav-item.active .nav-icon{transform:scale(1.15)}
+
+/* ══════════════════════════════════════════════════════
+   DASHBOARD
+══════════════════════════════════════════════════════ */
+.dash-header{
+  padding:20px 20px 12px;
+  display:flex;justify-content:space-between;align-items:flex-start;
+}
+.dash-greeting{font-family:'Space Grotesk',sans-serif;font-size:1.3rem;font-weight:700}
+.dash-period{
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:20px;padding:6px 14px;
+}
+.period-arrow{color:var(--muted);font-size:1rem;padding:2px 4px}
+.period-arrow:active{transform:scale(0.85)}
+.period-label{font-size:.85rem;font-weight:700;white-space:nowrap}
+.countdown-banner{
+  margin:0 16px 12px;border-radius:var(--radius-s);padding:12px 16px;
+  display:flex;align-items:center;gap:10px;
+  animation:slideUp .4s var(--ease-spring);
+}
+.countdown-banner.green{background:rgba(76,184,122,.1);border:1px solid rgba(76,184,122,.25)}
+.countdown-banner.orange{background:rgba(245,167,66,.1);border:1px solid rgba(245,167,66,.25)}
+.countdown-banner.red{background:rgba(224,85,85,.1);border:1px solid rgba(224,85,85,.25)}
+.countdown-banner.blue{background:rgba(66,153,225,.1);border:1px solid rgba(66,153,225,.25)}
+.countdown-icon{font-size:1.25rem}
+.countdown-text{flex:1;font-size:.85rem;font-weight:600;line-height:1.35}
+.countdown-text b{display:block;font-size:.95rem;font-weight:700}
+.countdown-btn{
+  font-size:.75rem;font-weight:700;padding:7px 12px;
+  border-radius:var(--radius-xs);background:var(--surface3);color:var(--text);
+}
+.countdown-btn:active{transform:scale(0.95)}
+.cards-grid{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:10px;padding:0 16px 16px;
+}
+.kpi-card{
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);padding:14px;
+  animation:slideUp .35s var(--ease-spring) both;
+}
+.kpi-card:nth-child(1){animation-delay:.05s}
+.kpi-card:nth-child(2){animation-delay:.1s}
+.kpi-card:nth-child(3){animation-delay:.15s}
+.kpi-card:nth-child(4){animation-delay:.2s}
+.kpi-icon{font-size:1.1rem;margin-bottom:8px}
+.kpi-label{font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.kpi-value{font-family:'Space Grotesk',sans-serif;font-size:1.15rem;font-weight:700;line-height:1;margin-bottom:8px}
+.kpi-value.shimmer{height:22px;width:80%;border-radius:4px}
+.mono-alert{
+  margin:0 16px 16px;
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);padding:14px 16px;
+}
+.mono-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.mono-title{font-size:.85rem;font-weight:700}
+.mono-pct{font-family:'Space Grotesk',sans-serif;font-size:.85rem;font-weight:700;color:var(--accent)}
+.mono-sub{font-size:.78rem;color:var(--muted);margin-top:6px}
+.chart-wrap{margin:0 16px 16px}
+.chart-title{font-family:'Space Grotesk',sans-serif;font-size:.9rem;font-weight:600;margin-bottom:12px}
+.chart-svg-wrap{background:var(--surface);border:1px solid var(--surface3);border-radius:var(--radius);padding:16px}
+.quick-actions{display:flex;gap:10px;padding:0 16px 8px}
+.qa-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);padding:16px 8px;
+  font-size:.8rem;font-weight:700;color:var(--text);
+  transition:all .15s ease;
+}
+.qa-btn:active{transform:scale(0.97);background:var(--surface2)}
+.qa-btn .qa-icon{font-size:1.5rem}
+
+/* ══════════════════════════════════════════════════════
+   SIMULATOR
+══════════════════════════════════════════════════════ */
+.sim-header{padding:20px 20px 4px}
+.sim-title{font-family:'Space Grotesk',sans-serif;font-size:1.4rem;font-weight:700;margin-bottom:4px}
+.sim-body{padding:0 16px}
+.sim-result{
+  margin:16px 0;
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);overflow:hidden;
+  animation:slideUp .3s var(--ease-spring);
+}
+.sim-result-header{
+  padding:16px;border-bottom:1px solid var(--surface3);
+  background:var(--surface2);
+}
+.sim-result-title{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sim-net{font-family:'Space Grotesk',sans-serif;font-size:2rem;font-weight:700}
+.sim-net.green{color:var(--ok)}
+.sim-net.yellow{color:var(--accent)}
+.sim-net.red{color:var(--error)}
+.sim-margin{font-size:.85rem;color:var(--muted);margin-top:2px}
+.sim-breakdown{padding:0}
+.sim-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:11px 16px;border-bottom:1px solid var(--surface3);
+  font-size:.875rem;
+}
+.sim-row:last-child{border-bottom:none}
+.sim-row.total{
+  background:var(--surface2);font-weight:700;
+  font-family:'Space Grotesk',sans-serif;
+}
+.sim-row-label{color:var(--muted)}
+.sim-row-val{font-weight:700}
+.sim-row-val.neg{color:var(--error)}
+.sim-row-val.pos{color:var(--ok)}
+.bep-box{
+  background:rgba(245,200,66,.06);border:1px solid rgba(245,200,66,.2);
+  border-radius:var(--radius-s);padding:14px 16px;margin:0 0 16px;
+}
+.bep-label{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.bep-value{font-family:'Space Grotesk',sans-serif;font-size:.95rem;font-weight:600;color:var(--accent)}
+.toggle-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 0;border-bottom:1px solid var(--surface3);
+}
+.toggle-label{font-size:.95rem;font-weight:600}
+.toggle-sub{font-size:.78rem;color:var(--muted);margin-top:2px}
+.toggle{
+  position:relative;width:46px;height:26px;cursor:pointer;
+}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-track{
+  position:absolute;inset:0;
+  background:var(--surface3);border-radius:13px;
+  transition:background .2s ease;
+}
+.toggle input:checked + .toggle-track{background:var(--accent)}
+.toggle-thumb{
+  position:absolute;top:3px;left:3px;
+  width:20px;height:20px;border-radius:50%;
+  background:var(--muted);
+  transition:transform .2s var(--ease-spring), background .2s ease;
+}
+.toggle input:checked ~ .toggle-thumb{transform:translateX(20px);background:#07130e}
+
+/* ══════════════════════════════════════════════════════
+   CIERRE
+══════════════════════════════════════════════════════ */
+.cierre-header{padding:20px 20px 4px;display:flex;align-items:center;justify-content:space-between}
+.cierre-title{font-family:'Space Grotesk',sans-serif;font-size:1.4rem;font-weight:700}
+.cierre-body{padding:0 16px}
+.cierre-section{
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);margin-bottom:14px;overflow:hidden;
+}
+.cierre-section-header{
+  padding:12px 16px;background:var(--surface2);
+  border-bottom:1px solid var(--surface3);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.cierre-section-title{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.cierre-data-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 16px;border-bottom:1px solid var(--surface3);
+  font-size:.9rem;
+}
+.cierre-data-row:last-child{border-bottom:none}
+.cierre-data-label{color:var(--muted)}
+.cierre-data-val{font-weight:700;font-family:'Space Grotesk',sans-serif}
+.cierre-data-val.neg{color:var(--error)}
+.cierre-result-box{
+  margin:0 16px 16px;
+  background:var(--surface2);border:1px solid var(--surface3);
+  border-radius:var(--radius);padding:20px;text-align:center;
+}
+.cierre-result-label{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.cierre-result-net{font-family:'Space Grotesk',sans-serif;font-size:2.5rem;font-weight:700;margin-bottom:4px}
+.cierre-result-compare{font-size:.85rem;color:var(--muted)}
+.cierre-input-section{
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);margin-bottom:14px;padding:16px;
+}
+.cierre-input-section .section-title{margin-bottom:16px}
+
+/* ══════════════════════════════════════════════════════
+   PERFIL
+══════════════════════════════════════════════════════ */
+.perfil-header{padding:20px 20px 4px}
+.perfil-title{font-family:'Space Grotesk',sans-serif;font-size:1.4rem;font-weight:700}
+.perfil-body{padding:0 16px}
+.perfil-section{
+  background:var(--surface);border:1px solid var(--surface3);
+  border-radius:var(--radius);margin-bottom:14px;overflow:hidden;
+}
+.perfil-section-header{
+  padding:12px 16px;background:var(--surface2);
+  border-bottom:1px solid var(--surface3);
+}
+.perfil-section-title{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.perfil-section-body{padding:16px}
+.history-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 16px;border-bottom:1px solid var(--surface3);
+}
+.history-row:last-child{border-bottom:none}
+.history-month{font-size:.9rem;font-weight:700}
+.history-net{font-family:'Space Grotesk',sans-serif;font-size:.95rem;font-weight:700}
+.history-net.pos{color:var(--ok)}
+.history-net.neg{color:var(--error)}
+.ml-status-box{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 16px;
+}
+.ml-dot{width:10px;height:10px;border-radius:50%}
+.ml-dot.connected{background:var(--ok)}
+.ml-dot.disconnected{background:var(--dim)}
+.ml-status-text{flex:1}
+.ml-status-name{font-size:.9rem;font-weight:700}
+.ml-status-sub{font-size:.78rem;color:var(--muted)}
+
+/* ══════════════════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════════════════ */
+.modal-overlay{
+  position:fixed;inset:0;z-index:500;
+  background:rgba(7,19,14,.85);
+  display:flex;align-items:flex-end;
+  opacity:0;pointer-events:none;
+  transition:opacity .25s ease;
+}
+.modal-overlay.show{opacity:1;pointer-events:all}
+.modal-sheet{
+  width:100%;max-width:430px;margin:0 auto;
+  background:var(--surface);
+  border-radius:var(--radius) var(--radius) 0 0;
+  padding:20px 24px 40px;
+  transform:translateY(100%);
+  transition:transform .3s var(--ease-spring);
+}
+.modal-overlay.show .modal-sheet{transform:translateY(0)}
+.modal-handle{width:40px;height:4px;background:var(--surface3);border-radius:2px;margin:0 auto 20px}
+.modal-title{font-family:'Space Grotesk',sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:6px}
+.modal-sub{font-size:.875rem;color:var(--muted);line-height:1.5;margin-bottom:20px}
+.upload-zone{
+  border:2px dashed var(--surface3);border-radius:var(--radius);
+  padding:32px 16px;text-align:center;margin-bottom:16px;
+  transition:border-color .2s ease;cursor:pointer;
+  background:var(--surface2);
+}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--accent)}
+.upload-icon{font-size:2.5rem;margin-bottom:10px}
+.upload-text{font-size:.9rem;font-weight:600;margin-bottom:4px}
+.upload-sub{font-size:.78rem;color:var(--muted)}
+input[type=file]{display:none}
+
+/* ══════════════════════════════════════════════════════
+   ANIMATIONS
+══════════════════════════════════════════════════════ */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+.anim-pop{animation:popIn .3s var(--ease-spring)}
+.anim-fade{animation:fadeIn .3s ease}
+
+/* Stagger helper */
+.stagger > *{animation:slideUp .35s var(--ease-spring) both}
+.stagger > *:nth-child(1){animation-delay:.04s}
+.stagger > *:nth-child(2){animation-delay:.08s}
+.stagger > *:nth-child(3){animation-delay:.12s}
+.stagger > *:nth-child(4){animation-delay:.16s}
+.stagger > *:nth-child(5){animation-delay:.20s}
+.stagger > *:nth-child(6){animation-delay:.24s}
+.stagger > *:nth-child(7){animation-delay:.28s}
+.stagger > *:nth-child(8){animation-delay:.32s}
+
+/* ── Empty state ──────────────────────────────────────── */
+.empty-state{
+  text-align:center;padding:40px 24px;
+}
+.empty-icon{font-size:2.5rem;margin-bottom:12px}
+.empty-title{font-family:'Space Grotesk',sans-serif;font-size:1.1rem;font-weight:600;margin-bottom:6px}
+.empty-sub{font-size:.875rem;color:var(--muted);line-height:1.5}
+
+/* scrollbar */
+*::-webkit-scrollbar{width:3px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:2px}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ── Toast container ─────────────────────────────── -->
+<div id="toast-wrap"></div>
+
+<!-- ── Loading overlay ─────────────────────────────── -->
+<div id="loading"><div class="spinner-ring"></div></div>
+
+<!-- ════════════════════════════════════════════════════
+     SCREEN: AUTH
+════════════════════════════════════════════════════ -->
+<div class="screen no-nav active" id="screen-auth">
+  <div class="auth-hero">
+    <div class="auth-logo">MLClaro</div>
+    <div class="auth-tagline">Sabé cuánto ganás en Mercado Libre<br>antes y después de cada venta.</div>
+  </div>
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <div class="auth-tab active" onclick="authTab('login')">Entrar</div>
+      <div class="auth-tab" onclick="authTab('register')">Crear cuenta</div>
+    </div>
+    <div id="auth-login">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="tu@email.com" autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary" onclick="doLogin()">Entrar a mi cuenta</button>
+    </div>
+    <div id="auth-register" style="display:none">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="reg-email" placeholder="tu@email.com" autocomplete="email">
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="reg-pass" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>Repetí la contraseña</label>
+        <input type="password" id="reg-pass2" placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <button class="btn btn-primary" onclick="doRegister()">Crear mi cuenta gratis</button>
+    </div>
+  </div>
+  <p style="text-align:center;font-size:.78rem;color:var(--dim);margin-top:20px;padding:0 16px;line-height:1.5">
+    Al usar MLClaro aceptás nuestros términos. Tus datos están protegidos y nunca los compartimos.
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SCREEN: ONBOARDING
+════════════════════════════════════════════════════ -->
+<div class="screen no-nav" id="screen-onboarding">
+  <div class="wizard-header">
+    <button class="wizard-back" id="wizard-back" onclick="wizardBack()">←</button>
+    <div class="wizard-prog-wrap">
+      <div class="wizard-prog-label" id="wizard-prog-label">Paso 1 de 4</div>
+      <div class="wizard-prog-track"><div class="wizard-prog-fill" id="wizard-prog-fill" style="width:25%"></div></div>
+    </div>
+  </div>
+
+  <!-- Step 1: Negocio -->
+  <div class="wizard-body" id="step-1">
+    <h1 class="wizard-title">Tu negocio 🏪</h1>
+    <p class="wizard-sub">Contanos un poco sobre vos para que los cálculos sean precisos.</p>
+    <div class="field">
+      <label>Nombre de tu negocio</label>
+      <input type="text" id="ob-nombre" placeholder="Ej: Tech Gadgets MKT">
+    </div>
+    <div class="field">
+      <label>Condición fiscal</label>
+      <select id="ob-fiscal" onchange="toggleMono()">
+        <option value="">Seleccioná</option>
+        <option value="monotributista">Monotributista</option>
+        <option value="responsable_inscripto">Responsable Inscripto</option>
+      </select>
+    </div>
+    <div class="field" id="mono-cat-field" style="display:none">
+      <label>Categoría monotributo</label>
+      <select id="ob-mono-cat">
+        <option value="">Seleccioná tu categoría</option>
+        <option value="A">A — hasta $1.036.000</option>
+        <option value="B">B — hasta $1.554.000</option>
+        <option value="C">C — hasta $2.072.000</option>
+        <option value="D">D — hasta $2.763.000</option>
+        <option value="E">E — hasta $3.453.000</option>
+        <option value="F">F — hasta $4.144.000</option>
+        <option value="G">G — hasta $4.835.000</option>
+        <option value="H">H — hasta $6.211.500</option>
+        <option value="I">I — hasta $9.109.500</option>
+        <option value="J">J — hasta $10.147.500</option>
+        <option value="K">K — hasta $11.258.500</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Provincia de radicación fiscal</label>
+      <select id="ob-provincia">
+        <option value="">Seleccioná</option>
+        <option>Buenos Aires</option><option>CABA</option><option>Córdoba</option>
+        <option>Santa Fe</option><option>Mendoza</option><option>Tucumán</option>
+        <option>Entre Ríos</option><option>Salta</option><option>Misiones</option>
+        <option>Chaco</option><option>Corrientes</option><option>Santiago del Estero</option>
+        <option>San Juan</option><option>Jujuy</option><option>Río Negro</option>
+        <option>Neuquén</option><option>Formosa</option><option>Chubut</option>
+        <option>San Luis</option><option>Catamarca</option><option>La Rioja</option>
+        <option>La Pampa</option><option>Santa Cruz</option><option>Tierra del Fuego</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Step 2: Gastos -->
+  <div class="wizard-body" id="step-2" style="display:none">
+    <h1 class="wizard-title">Tus gastos fijos 💸</h1>
+    <p class="wizard-sub">Ingresá tus gastos mensuales. Sirven para calcular tu punto de equilibrio real.</p>
+    <div class="field">
+      <label>Alquiler</label>
+      <input type="number" id="g-alquiler" placeholder="0" oninput="updateGastosTotal()" min="0">
+    </div>
+    <div class="field">
+      <label>Empleados / sueldos</label>
+      <input type="number" id="g-empleados" placeholder="0" oninput="updateGastosTotal()" min="0">
+    </div>
+    <div class="field">
+      <label>Servicios (luz, internet, etc.)</label>
+      <input type="number" id="g-servicios" placeholder="0" oninput="updateGastosTotal()" min="0">
+    </div>
+    <div class="field">
+      <label>Logística propia (no ML)</label>
+      <input type="number" id="g-logistica" placeholder="0" oninput="updateGastosTotal()" min="0">
+    </div>
+    <div class="field">
+      <label>Suscripciones y herramientas</label>
+      <input type="number" id="g-suscripciones" placeholder="0" oninput="updateGastosTotal()" min="0">
+    </div>
+    <div class="field">
+      <label>Otros</label>
+      <input type="number" id="g-otros" placeholder="0" oninput="updateGastosTotal()" min="0">
+    </div>
+    <div class="gastos-total">
+      <span class="gastos-total-label">Total mensual</span>
+      <span class="gastos-total-value" id="gastos-total-val">$0</span>
+    </div>
+  </div>
+
+  <!-- Step 3: ML -->
+  <div class="wizard-body" id="step-3" style="display:none">
+    <h1 class="wizard-title">Tu cuenta de ML 🛒</h1>
+    <p class="wizard-sub">Conectando tu cuenta traemos tus ventas automáticamente cada mes.</p>
+    <div class="ml-connect-box">
+      <div class="ml-connect-icon">🔗</div>
+      <div class="ml-connect-title" id="ml-connect-title">Conectá tu cuenta</div>
+      <div class="ml-connect-desc" id="ml-connect-desc">Con tu permiso, leemos tus ventas, comisiones y envíos. Nunca modificamos nada en tu cuenta.</div>
+      <div id="ml-connected-chip" style="display:none" class="ml-connected-chip">
+        ✓ <span id="ml-user-name">Cuenta conectada</span>
+      </div>
+      <button class="btn btn-secondary" id="btn-connect-ml" onclick="connectML()">
+        Conectar mi cuenta de ML
+      </button>
+    </div>
+    <p style="font-size:.78rem;color:var(--dim);line-height:1.5;text-align:center">
+      Podés saltear este paso y conectarlo después desde Perfil. Igual podés usar la app cargando los datos manualmente.
+    </p>
+  </div>
+
+  <!-- Step 4: Listo -->
+  <div class="wizard-body" id="step-4" style="display:none">
+    <h1 class="wizard-title">¡Listo! 🎉</h1>
+    <p class="wizard-sub">Ya tenés todo configurado. Así quedó tu perfil:</p>
+    <div class="listo-summary" id="listo-summary"></div>
+    <p style="font-size:.875rem;color:var(--muted);line-height:1.5;margin-bottom:20px">
+      Podés cambiar todo esto cuando quieras desde la pantalla de Perfil.
+    </p>
+  </div>
+
+  <div class="wizard-footer">
+    <button class="btn btn-primary" id="wizard-next" onclick="wizardNext()">Continuar →</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SCREEN: DASHBOARD
+════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-dashboard">
+  <div class="dash-header">
+    <div>
+      <div style="font-size:.78rem;color:var(--muted);font-weight:600;margin-bottom:2px">Buenos días</div>
+      <div class="dash-greeting" id="dash-greeting">Cargando...</div>
+    </div>
+    <div class="dash-period">
+      <button class="period-arrow" onclick="changePeriod(-1)">←</button>
+      <span class="period-label" id="period-label">Abril 2026</span>
+      <button class="period-arrow" onclick="changePeriod(1)">→</button>
+    </div>
+  </div>
+
+  <div id="countdown-banner-wrap"></div>
+
+  <div class="cards-grid" id="cards-grid">
+    <div class="kpi-card">
+      <div class="kpi-icon">💰</div>
+      <div class="kpi-label">Ingresos brutos</div>
+      <div class="kpi-value shimmer" id="kpi-ingresos"> </div>
+      <div id="badge-ingresos"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">📉</div>
+      <div class="kpi-label">Cargos ML</div>
+      <div class="kpi-value shimmer" id="kpi-cargos"> </div>
+      <div id="badge-cargos"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">🚚</div>
+      <div class="kpi-label">Envíos</div>
+      <div class="kpi-value shimmer" id="kpi-envios"> </div>
+      <div id="badge-envios"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-label">Ganancia neta</div>
+      <div class="kpi-value shimmer" id="kpi-ganancia"> </div>
+      <div id="badge-ganancia"></div>
+    </div>
+  </div>
+
+  <div id="mono-alert-wrap"></div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Ganancia por mes</div>
+    <div class="chart-svg-wrap">
+      <svg id="bar-chart" width="100%" height="130" viewBox="0 0 340 130" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+  </div>
+
+  <p class="section-title" style="padding:0 16px 10px">Accesos rápidos</p>
+  <div class="quick-actions stagger">
+    <button class="qa-btn" onclick="navigate('simulator')">
+      <span class="qa-icon">🧮</span>
+      Simular precio
+    </button>
+    <button class="qa-btn" onclick="openUploadModal()">
+      <span class="qa-icon">📂</span>
+      Cerrar mes
+    </button>
+  </div>
+  <div style="height:8px"></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SCREEN: SIMULATOR
+════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-simulator">
+  <div class="sim-header">
+    <h1 class="sim-title">Simulador 🧮</h1>
+    <p style="font-size:.875rem;color:var(--muted)">Calculá tu ganancia antes de publicar.</p>
+  </div>
+  <div class="sim-body">
+    <div class="field-row">
+      <div class="field">
+        <label>Costo del producto</label>
+        <input type="number" id="sim-costo" placeholder="0" oninput="calcSim()" min="0">
+      </div>
+      <div class="field">
+        <label>Precio de venta</label>
+        <input type="number" id="sim-precio" placeholder="0" oninput="calcSim()" min="0">
+      </div>
+    </div>
+    <div class="field">
+      <label>Categoría</label>
+      <select id="sim-categoria" onchange="calcSim()">
+        <option value="general">General / Otros (13.5% / 16%)</option>
+        <option value="electronica">Electrónica y tecnología (13.5% / 16%)</option>
+        <option value="celulares">Celulares y smartphones (13.5% / 16%)</option>
+        <option value="computacion">Computación (13.5% / 16%)</option>
+        <option value="electrodomesticos">Electrodomésticos (11.8% / 14%)</option>
+        <option value="herramientas">Herramientas (13.5% / 16%)</option>
+        <option value="hogar">Hogar y muebles (13.5% / 16%)</option>
+        <option value="ropa">Ropa y accesorios (15% / 17.14%)</option>
+        <option value="calzado">Calzado (15% / 17.14%)</option>
+        <option value="juguetes">Juguetes (13.5% / 16%)</option>
+        <option value="deportes">Deportes (13.5% / 16%)</option>
+        <option value="belleza">Belleza y cuidado personal (13.5% / 16%)</option>
+        <option value="alimentos">Alimentos y bebidas (13.5% / 16%)</option>
+        <option value="libreria">Librería y oficina (13.5% / 16%)</option>
+        <option value="vehiculos">Vehículos (3%)</option>
+        <option value="inmuebles">Inmuebles (3%)</option>
+        <option value="servicios">Servicios (8%)</option>
+      </select>
+    </div>
+    <p class="section-title">Tipo de publicación</p>
+    <div class="pills" style="margin-bottom:20px">
+      <div class="pill" onclick="setPill('tipo','gratuita',this)" data-group="tipo" data-val="gratuita">Gratuita</div>
+      <div class="pill active" onclick="setPill('tipo','clasica',this)" data-group="tipo" data-val="clasica">Clásica</div>
+      <div class="pill" onclick="setPill('tipo','premium',this)" data-group="tipo" data-val="premium">Premium</div>
+    </div>
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">¿Envío gratis?</div>
+        <div class="toggle-sub">El costo de envío lo absorbés vos</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="sim-envio-gratis" onchange="toggleEnvioGratis();calcSim()">
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+    <div id="fulfillment-row" class="toggle-row" style="display:none">
+      <div>
+        <div class="toggle-label">¿Fulfillment ML?</div>
+        <div class="toggle-sub">ML almacena y despacha el producto</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="sim-fulfillment" onchange="calcSim()">
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+    <div id="sim-result-wrap"></div>
+    <div id="bep-wrap"></div>
+    <div style="height:16px"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SCREEN: CIERRE
+════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-cierre">
+  <div class="cierre-header">
+    <div>
+      <h1 class="cierre-title" id="cierre-title">Cierre mensual</h1>
+      <p style="font-size:.875rem;color:var(--muted);margin-top:2px" id="cierre-subtitle">Abril 2026</p>
+    </div>
+    <div id="cierre-badge"></div>
+  </div>
+  <div class="cierre-body" id="cierre-body">
+    <div class="empty-state">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">Cargando datos...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     SCREEN: PERFIL
+════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-perfil">
+  <div class="perfil-header">
+    <h1 class="perfil-title">Perfil y configuración ⚙️</h1>
+  </div>
+  <div class="perfil-body" id="perfil-body">
+    <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     BOTTOM NAV
+════════════════════════════════════════════════════ -->
+<nav id="bottom-nav">
+  <div class="nav-item active" id="nav-dashboard" onclick="navigate('dashboard')">
+    <span class="nav-icon">📊</span>
+    <span>Inicio</span>
+  </div>
+  <div class="nav-item" id="nav-simulator" onclick="navigate('simulator')">
+    <span class="nav-icon">🧮</span>
+    <span>Simular</span>
+  </div>
+  <div class="nav-item" id="nav-cierre" onclick="navigate('cierre')">
+    <span class="nav-icon">📅</span>
+    <span>Cierre</span>
+  </div>
+  <div class="nav-item" id="nav-perfil" onclick="navigate('perfil')">
+    <span class="nav-icon">👤</span>
+    <span>Perfil</span>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════════════════════════
+     MODAL: UPLOAD LIQUIDACIÓN
+════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-upload" onclick="closeUploadModal(event)">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <h2 class="modal-title">Cerrar mes con liquidación 📂</h2>
+    <p class="modal-sub">Subí el archivo Excel o CSV que descargaste desde tu cuenta de ML. Con esto tus números pasan a ser oficiales y verificados.</p>
+    <div class="upload-zone" id="upload-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="handleFileDrop(event)">
+      <div class="upload-icon">📄</div>
+      <div class="upload-text" id="upload-text">Tocá para elegir el archivo</div>
+      <div class="upload-sub">Excel (.xlsx) o CSV · Reporte de acreditaciones</div>
+    </div>
+    <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFileSelect(event)">
+    <button class="btn btn-primary" id="btn-process-file" onclick="processLiquidacion()" style="display:none">
+      Procesar y cerrar el mes ✓
+    </button>
+    <button class="btn btn-ghost" style="margin-top:10px" onclick="closeUploadModal()">Cancelar</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ── Config ──────────────────────────────────────────── */
+const SUPABASE_URL     = '__SUPABASE_URL__';
+const SUPABASE_ANON_KEY= '__SUPABASE_ANON_KEY__';
+const ML_CLIENT_ID     = '__ML_CLIENT_ID__';
+const ML_REDIRECT_URI  = window.location.origin + window.location.pathname;
+
+/* ── Business data ───────────────────────────────────── */
+const COMISIONES = {
+  general:         { clasica:.135,  premium:.16   },
+  electronica:     { clasica:.135,  premium:.16   },
+  celulares:       { clasica:.135,  premium:.16   },
+  computacion:     { clasica:.135,  premium:.16   },
+  electrodomesticos:{ clasica:.118, premium:.14   },
+  herramientas:    { clasica:.135,  premium:.16   },
+  hogar:           { clasica:.135,  premium:.16   },
+  ropa:            { clasica:.15,   premium:.1714 },
+  calzado:         { clasica:.15,   premium:.1714 },
+  juguetes:        { clasica:.135,  premium:.16   },
+  deportes:        { clasica:.135,  premium:.16   },
+  belleza:         { clasica:.135,  premium:.16   },
+  alimentos:       { clasica:.135,  premium:.16   },
+  libreria:        { clasica:.135,  premium:.16   },
+  vehiculos:       { clasica:.03,   premium:.03   },
+  inmuebles:       { clasica:.03,   premium:.03   },
+  servicios:       { clasica:.08,   premium:.08   },
+};
+
+const MONO_LIMITES = {
+  A:1036000, B:1554000, C:2072000, D:2763000,
+  E:3453000, F:4144000, G:4835000, H:6211500,
+  I:9109500, J:10147500, K:11258500
+};
+
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function costoFijo(precio) {
+  if (precio <= 15000)  return 1095;
+  if (precio <= 25000)  return 2190;
+  if (precio <= 33000)  return 2628;
+  return 0;
+}
+
+/* ── Supabase client ─────────────────────────────────── */
+let sb;
+try {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch(e) {
+  console.warn('Supabase no configurado — modo demo');
+}
+
+/* ── App state ───────────────────────────────────────── */
+const state = {
+  user:      null,
+  perfil:    null,
+  cierres:   [],
+  currentScreen: 'auth',
+  onboardingStep: 0,
+  period: { mes: new Date().getMonth() + 1, anio: new Date().getFullYear() },
+  sim: { tipo:'clasica' },
+  pendingFile: null,
+};
+
+/* ══════════════════════════════════════════════════════
+   UTILS
+══════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const $q = sel => document.querySelector(sel);
+
+function fmt(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return '$' + Math.round(n).toLocaleString('es-AR');
+}
+function fmtPct(n) { return (n * 100).toFixed(1) + '%'; }
+
+function showToast(msg, type = '') {
+  const t = document.createElement('div');
+  t.className = 'toast' + (type ? ' ' + type : '');
+  t.textContent = msg;
+  $('toast-wrap').appendChild(t);
+  requestAnimationFrame(() => { requestAnimationFrame(() => t.classList.add('show')); });
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.remove(), 350);
+  }, 3200);
+}
+
+function setLoading(show) {
+  $('loading').classList.toggle('show', show);
+}
+
+function badgeHTML(modo) {
+  if (!modo) return '<span class="badge badge-est">Estimado</span>';
+  return modo === 'verificado'
+    ? '<span class="badge badge-ver">Verificado ✓</span>'
+    : '<span class="badge badge-est">Estimado</span>';
+}
+
+/* ══════════════════════════════════════════════════════
+   NAVIGATION
+══════════════════════════════════════════════════════ */
+function navigate(screen) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = $('screen-' + screen);
+  if (el) { el.classList.add('active'); el.scrollTop = 0; }
+  state.currentScreen = screen;
+
+  const nav = $('bottom-nav');
+  const noNavScreens = ['auth', 'onboarding'];
+  if (noNavScreens.includes(screen)) {
+    nav.classList.remove('show');
+  } else {
+    nav.classList.add('show');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const navEl = $('nav-' + screen);
+    if (navEl) navEl.classList.add('active');
+  }
+
+  if (screen === 'dashboard') renderDashboard();
+  if (screen === 'cierre')    renderCierre();
+  if (screen === 'perfil')    renderPerfil();
+}
+
+/* ══════════════════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════════════════ */
+function authTab(tab) {
+  $('auth-login').style.display    = tab === 'login'    ? '' : 'none';
+  $('auth-register').style.display = tab === 'register' ? '' : 'none';
+  document.querySelectorAll('.auth-tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
+  });
+}
+
+async function doLogin() {
+  const email = $('login-email').value.trim();
+  const pass  = $('login-pass').value;
+  if (!email || !pass) { showToast('Completá email y contraseña', 'err'); return; }
+  setLoading(true);
+  try {
+    if (!sb) { await mockLogin(); return; }
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if (error) throw error;
+    state.user = data.user;
+    await afterLogin();
+  } catch(e) {
+    showToast(e.message || 'No pudimos entrar. Revisá tus datos.', 'err');
+  } finally { setLoading(false); }
+}
+
+async function doRegister() {
+  const email = $('reg-email').value.trim();
+  const pass  = $('reg-pass').value;
+  const pass2 = $('reg-pass2').value;
+  if (!email || !pass) { showToast('Completá todos los campos', 'err'); return; }
+  if (pass !== pass2)  { showToast('Las contraseñas no coinciden', 'err'); return; }
+  if (pass.length < 8) { showToast('La contraseña necesita al menos 8 caracteres', 'err'); return; }
+  setLoading(true);
+  try {
+    if (!sb) { await mockLogin(); return; }
+    const { data, error } = await sb.auth.signUp({ email, password: pass });
+    if (error) throw error;
+    state.user = data.user;
+    await afterLogin();
+  } catch(e) {
+    showToast(e.message || 'No pudimos crear tu cuenta.', 'err');
+  } finally { setLoading(false); }
+}
+
+async function doLogout() {
+  if (sb) await sb.auth.signOut();
+  state.user = null; state.perfil = null; state.cierres = [];
+  navigate('auth');
+}
+
+async function afterLogin() {
+  await loadPerfil();
+  if (!state.perfil) {
+    state.onboardingStep = 0;
+    navigate('onboarding');
+    renderWizardStep(0);
+  } else {
+    navigate('dashboard');
+  }
+}
+
+async function mockLogin() {
+  state.user = { id: 'demo', email: 'demo@mlclaro.com' };
+  state.perfil = null;
+  await afterLogin();
+  setLoading(false);
+}
+
+/* ══════════════════════════════════════════════════════
+   SUPABASE: PERFIL
+══════════════════════════════════════════════════════ */
+async function loadPerfil() {
+  if (!sb || !state.user || state.user.id === 'demo') return;
+  const { data } = await sb.from('perfiles').select('*')
+    .eq('user_id', state.user.id).maybeSingle();
+  state.perfil = data || null;
+}
+
+async function savePerfil(data) {
+  if (!sb || state.user?.id === 'demo') {
+    state.perfil = { ...state.perfil, ...data }; return true;
+  }
+  const payload = { ...data, user_id: state.user.id, updated_at: new Date().toISOString() };
+  if (state.perfil?.id) {
+    const { error } = await sb.from('perfiles').update(payload).eq('id', state.perfil.id);
+    if (error) throw error;
+  } else {
+    const { data: row, error } = await sb.from('perfiles').insert(payload).select().single();
+    if (error) throw error;
+    state.perfil = row;
+  }
+  await loadPerfil();
+  return true;
+}
+
+async function loadCierres() {
+  if (!sb || state.user?.id === 'demo') { state.cierres = demosCierres(); return; }
+  const { data } = await sb.from('cierres').select('*')
+    .eq('user_id', state.user.id).order('anio', { ascending: false }).order('mes', { ascending: false });
+  state.cierres = data || [];
+}
+
+async function saveCierre(payload) {
+  if (!sb || state.user?.id === 'demo') {
+    const idx = state.cierres.findIndex(c => c.mes === payload.mes && c.anio === payload.anio);
+    if (idx >= 0) state.cierres[idx] = { ...state.cierres[idx], ...payload };
+    else state.cierres.unshift({ id: Date.now().toString(), user_id: 'demo', ...payload });
+    return true;
+  }
+  const full = { ...payload, user_id: state.user.id };
+  const { error } = await sb.from('cierres').upsert(full, { onConflict: 'user_id,mes,anio' });
+  if (error) throw error;
+  await loadCierres();
+  return true;
+}
+
+function getCierreActual() {
+  const { mes, anio } = state.period;
+  return state.cierres.find(c => c.mes === mes && c.anio === anio) || null;
+}
+
+function demosCierres() {
+  const now = new Date();
+  const cierres = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    cierres.push({
+      id: i.toString(), user_id:'demo',
+      mes: d.getMonth()+1, anio: d.getFullYear(),
+      modo: i > 0 ? 'verificado' : 'estimado',
+      ingresos_brutos: 800000 + Math.random()*400000,
+      comisiones_ml:   80000 + Math.random()*40000,
+      costo_envios:    30000 + Math.random()*15000,
+      devoluciones:    10000 + Math.random()*8000,
+      ml_ads:          5000  + Math.random()*3000,
+      percepciones_iibb:15000+ Math.random()*5000,
+      iva_retenido:    0,
+      costo_mercaderia:300000+ Math.random()*150000,
+      gastos_variables:20000 + Math.random()*10000,
+      otros_ingresos:  0,
+      retiro_duenio:   50000,
+    });
+  }
+  cierres.forEach(c => {
+    c.ganancia_neta = c.ingresos_brutos - c.comisiones_ml - c.costo_envios
+      - c.devoluciones - c.ml_ads - c.percepciones_iibb - c.iva_retenido
+      - c.costo_mercaderia - c.gastos_variables + c.otros_ingresos - c.retiro_duenio;
+  });
+  return cierres;
+}
+
+/* ══════════════════════════════════════════════════════
+   ONBOARDING WIZARD
+══════════════════════════════════════════════════════ */
+function toggleMono() {
+  const v = $('ob-fiscal').value;
+  $('mono-cat-field').style.display = v === 'monotributista' ? '' : 'none';
+}
+
+function updateGastosTotal() {
+  const ids = ['g-alquiler','g-empleados','g-servicios','g-logistica','g-suscripciones','g-otros'];
+  const total = ids.reduce((s,id) => s + (parseFloat($(id)?.value)||0), 0);
+  $('gastos-total-val').textContent = fmt(total);
+}
+
+function renderWizardStep(step) {
+  [1,2,3,4].forEach(i => $('step-'+i).style.display = i === step+1 ? '' : 'none');
+  const pct = ((step+1)/4*100).toFixed(0);
+  $('wizard-prog-fill').style.width = pct + '%';
+  $('wizard-prog-label').textContent = `Paso ${step+1} de 4`;
+  $('wizard-back').style.opacity = step === 0 ? '0' : '1';
+  $('wizard-back').style.pointerEvents = step === 0 ? 'none' : '';
+  const nextBtn = $('wizard-next');
+  nextBtn.textContent = step === 3 ? 'Ir a mi dashboard →' : 'Continuar →';
+  if (step === 3) renderListoSummary();
+}
+
+function renderListoSummary() {
+  const p = state.perfil || {};
+  const fiscal = p.condicion_fiscal === 'monotributista'
+    ? `Monotributista Cat. ${p.categoria_mono || '—'}`
+    : p.condicion_fiscal === 'responsable_inscripto' ? 'Responsable Inscripto' : '—';
+  const gastos = [p.gasto_alquiler,p.gasto_empleados,p.gasto_servicios,
+                  p.gasto_logistica,p.gasto_suscripciones,p.gasto_otros]
+    .reduce((s,v) => s+(v||0), 0);
+  const mlStatus = p.ml_access_token ? 'Conectado ✓' : 'No conectado';
+  $('listo-summary').innerHTML = `
+    <div class="listo-row"><span class="listo-key">Negocio</span><span class="listo-val">${p.nombre_negocio||'—'}</span></div>
+    <div class="listo-row"><span class="listo-key">Condición fiscal</span><span class="listo-val">${fiscal}</span></div>
+    <div class="listo-row"><span class="listo-key">Provincia</span><span class="listo-val">${p.provincia||'—'}</span></div>
+    <div class="listo-row"><span class="listo-key">Gastos fijos/mes</span><span class="listo-val">${fmt(gastos)}</span></div>
+    <div class="listo-row"><span class="listo-key">Cuenta ML</span><span class="listo-val">${mlStatus}</span></div>
+  `;
+}
+
+async function wizardNext() {
+  const step = state.onboardingStep;
+  if (step === 0) {
+    const nombre   = $('ob-nombre').value.trim();
+    const fiscal   = $('ob-fiscal').value;
+    const mono     = $('ob-mono-cat').value;
+    const provincia= $('ob-provincia').value;
+    if (!nombre)   { showToast('Poné el nombre de tu negocio', 'err'); return; }
+    if (!fiscal)   { showToast('Seleccioná tu condición fiscal', 'err'); return; }
+    if (fiscal === 'monotributista' && !mono) { showToast('Seleccioná tu categoría', 'err'); return; }
+    if (!provincia){ showToast('Seleccioná tu provincia', 'err'); return; }
+    setLoading(true);
+    try {
+      await savePerfil({
+        nombre_negocio: nombre, condicion_fiscal: fiscal,
+        categoria_mono: mono, provincia,
+      });
+    } catch(e) { showToast('Error al guardar. Intentá de nuevo.', 'err'); setLoading(false); return; }
+    setLoading(false);
+  }
+  if (step === 1) {
+    const ids = ['g-alquiler','g-empleados','g-servicios','g-logistica','g-suscripciones','g-otros'];
+    const keys = ['gasto_alquiler','gasto_empleados','gasto_servicios','gasto_logistica','gasto_suscripciones','gasto_otros'];
+    const data = {};
+    ids.forEach((id,i) => { data[keys[i]] = parseFloat($(id)?.value)||0; });
+    setLoading(true);
+    try { await savePerfil(data); } catch(e) { showToast('Error al guardar', 'err'); setLoading(false); return; }
+    setLoading(false);
+  }
+  if (step === 3) {
+    await loadCierres();
+    navigate('dashboard');
+    return;
+  }
+  state.onboardingStep = step + 1;
+  renderWizardStep(state.onboardingStep);
+}
+
+function wizardBack() {
+  if (state.onboardingStep === 0) return;
+  state.onboardingStep--;
+  renderWizardStep(state.onboardingStep);
+}
+
+/* ══════════════════════════════════════════════════════
+   ML OAUTH
+══════════════════════════════════════════════════════ */
+function connectML() {
+  if (!ML_CLIENT_ID || ML_CLIENT_ID === '__ML_CLIENT_ID__') {
+    showToast('Configurá tu ML_CLIENT_ID primero', 'warn'); return;
+  }
+  localStorage.setItem('mlclaro_pre_oauth_screen', state.currentScreen);
+  const url = `https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=${ML_CLIENT_ID}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`;
+  window.location.href = url;
+}
+
+async function handleMLCallback(code) {
+  showToast('Conectando tu cuenta de ML...', '');
+  try {
+    // Exchange via your backend / Supabase Edge Function
+    const res = await fetch(`/api/ml-token?code=${code}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`);
+    if (!res.ok) throw new Error('Error en la conexión con ML');
+    const tokens = await res.json();
+    await savePerfil({
+      ml_access_token:  tokens.access_token,
+      ml_refresh_token: tokens.refresh_token,
+      ml_user_id:       String(tokens.user_id),
+    });
+    showToast('¡Cuenta de ML conectada! 🎉');
+    $('ml-connected-chip').style.display = 'flex';
+    $('btn-connect-ml').textContent = 'Reconectar cuenta';
+  } catch(e) {
+    showToast('No pudimos conectar con ML. Intentá de nuevo.', 'err');
+  }
+}
+
+async function fetchMLData() {
+  const p = state.perfil;
+  if (!p?.ml_access_token) return null;
+  const { mes, anio } = state.period;
+  const dateFrom = `${anio}-${String(mes).padStart(2,'0')}-01T00:00:00.000-03:00`;
+  const dateTo   = new Date(anio, mes, 0);
+  const dateToStr= `${anio}-${String(mes).padStart(2,'0')}-${String(dateTo.getDate()).padStart(2,'0')}T23:59:59.000-03:00`;
+  try {
+    const headers = { Authorization: `Bearer ${p.ml_access_token}` };
+    const sellerId = p.ml_user_id;
+    const ordersRes = await fetch(
+      `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.date_created.from=${dateFrom}&order.date_created.to=${dateToStr}&limit=50`,
+      { headers }
+    );
+    if (!ordersRes.ok) return null;
+    const ordersData = await ordersRes.json();
+    const orders = ordersData.results || [];
+    let ingresos = 0, comisiones = 0, envios = 0;
+    for (const order of orders) {
+      ingresos += order.total_amount || 0;
+      for (const item of (order.order_items || [])) {
+        comisiones += item.sale_fee || 0;
+      }
+      if (order.shipping?.id) {
+        try {
+          const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${order.shipping.id}`, { headers });
+          if (shipRes.ok) {
+            const ship = await shipRes.json();
+            envios += ship.shipping_option?.cost || 0;
+          }
+        } catch(_) {}
+      }
+    }
+    return { ingresos_brutos: ingresos, comisiones_ml: comisiones, costo_envios: envios, modo:'estimado' };
+  } catch(_) { return null; }
+}
+
+/* ══════════════════════════════════════════════════════
+   DASHBOARD
+══════════════════════════════════════════════════════ */
+function changePeriod(dir) {
+  let { mes, anio } = state.period;
+  mes += dir;
+  if (mes > 12) { mes = 1; anio++; }
+  if (mes < 1)  { mes = 12; anio--; }
+  state.period = { mes, anio };
+  renderDashboard();
+}
+
+async function renderDashboard() {
+  const p = state.perfil;
+  $('dash-greeting').textContent = p?.nombre_negocio || (state.user?.email?.split('@')[0]) || 'vos';
+  const { mes, anio } = state.period;
+  $('period-label').textContent = `${MESES[mes-1]} ${anio}`;
+
+  renderCountdownBanner(mes, anio);
+
+  if (!state.cierres.length) await loadCierres();
+  const cierre = getCierreActual();
+  const modo = cierre?.modo || 'estimado';
+
+  const kpis = [
+    { id:'kpi-ingresos', badge:'badge-ingresos', val: cierre?.ingresos_brutos },
+    { id:'kpi-cargos',   badge:'badge-cargos',   val: cierre ? cierre.comisiones_ml + cierre.ml_ads : null },
+    { id:'kpi-envios',   badge:'badge-envios',   val: cierre?.costo_envios },
+    { id:'kpi-ganancia', badge:'badge-ganancia', val: cierre?.ganancia_neta },
+  ];
+  kpis.forEach(k => {
+    const el = $(k.id);
+    el.classList.remove('shimmer');
+    el.textContent = cierre ? fmt(k.val) : '—';
+    $(k.badge).innerHTML = badgeHTML(modo);
+  });
+
+  if (p?.condicion_fiscal === 'monotributista' && p.categoria_mono) {
+    renderMonoAlert();
+  } else {
+    $('mono-alert-wrap').innerHTML = '';
+  }
+
+  renderBarChart();
+}
+
+function renderCountdownBanner(mes, anio) {
+  const now = new Date();
+  const isCurrentMonth = now.getMonth()+1 === mes && now.getFullYear() === anio;
+  const wrap = $('countdown-banner-wrap');
+  if (!isCurrentMonth) { wrap.innerHTML = ''; return; }
+  const day = now.getDate();
+  let html = '';
+  if (day >= 15 && day <= 21) {
+    const left = 22 - day;
+    html = `<div class="countdown-banner green">
+      <span class="countdown-icon">📊</span>
+      <div class="countdown-text"><b>Faltan ${left} días para tu cierre</b>vas bien, seguí así</div>
+      <button class="countdown-btn" onclick="navigate('cierre')">Ver</button>
+    </div>`;
+  } else if (day >= 22 && day <= 27) {
+    const left = 28 - day;
+    html = `<div class="countdown-banner orange">
+      <span class="countdown-icon">⚠️</span>
+      <div class="countdown-text"><b>Faltan ${left} días</b>revisá tus números antes de cerrar</div>
+      <button class="countdown-btn" onclick="navigate('cierre')">Revisar</button>
+    </div>`;
+  } else if (day >= 28) {
+    html = `<div class="countdown-banner red">
+      <span class="countdown-icon">🔔</span>
+      <div class="countdown-text"><b>¡Mañana cerrás el mes!</b>No te olvides de subir la liquidación</div>
+      <button class="countdown-btn" onclick="openUploadModal()">Cerrar</button>
+    </div>`;
+  } else if (day === 1) {
+    const prevMes = mes === 1 ? 12 : mes-1;
+    html = `<div class="countdown-banner blue">
+      <span class="countdown-icon">📂</span>
+      <div class="countdown-text"><b>¿Cerraste ${MESES[prevMes-1]}?</b>Subí tu liquidación oficial</div>
+      <button class="countdown-btn" onclick="openUploadModal()">Subir</button>
+    </div>`;
+  }
+  wrap.innerHTML = html;
+}
+
+function renderMonoAlert() {
+  const p = state.perfil;
+  const limite = MONO_LIMITES[p.categoria_mono] || 0;
+  const anual = state.cierres
+    .filter(c => c.anio === state.period.anio)
+    .reduce((s,c) => s + (c.ingresos_brutos||0), 0);
+  const pct = limite ? Math.min(anual / limite, 1) : 0;
+  const pctStr = (pct*100).toFixed(1);
+  const alertColor = pct >= 0.9 ? 'var(--error)' : pct >= 0.8 ? 'var(--warn)' : 'var(--ok)';
+  $('mono-alert-wrap').innerHTML = `
+    <div class="mono-alert">
+      <div class="mono-header">
+        <span class="mono-title">Monotributo Cat. ${p.categoria_mono}</span>
+        <span class="mono-pct" style="color:${alertColor}">${pctStr}%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pctStr}%;background:${alertColor}"></div></div>
+      <div class="mono-sub">${fmt(anual)} de ${fmt(limite)} acumulados en ${state.period.anio}
+        ${pct >= 0.8 ? ' · <b style="color:var(--warn)">Estás cerca del límite</b>' : ''}</div>
+    </div>
+  `;
+}
+
+function renderBarChart() {
+  const svg = $('bar-chart');
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ mes: d.getMonth()+1, anio: d.getFullYear() });
+  }
+  const data = months.map(m => {
+    const c = state.cierres.find(x => x.mes === m.mes && x.anio === m.anio);
+    return { label: MESES[m.mes-1].slice(0,3), value: c?.ganancia_neta || 0, isCurrent: m.mes === state.period.mes && m.anio === state.period.anio };
+  });
+  const maxVal = Math.max(...data.map(d => Math.abs(d.value)), 1);
+  const W = 340, H = 130, pad = 8, barW = 36, gap = (W - pad*2 - barW*6) / 5;
+  let out = '';
+  data.forEach((d, i) => {
+    const x = pad + i * (barW + gap);
+    const barH = Math.max(2, Math.abs(d.value) / maxVal * 70);
+    const y = 90 - barH;
+    const color = d.isCurrent ? 'var(--accent)' : d.value >= 0 ? 'var(--brand-h)' : 'var(--error)';
+    const valLabel = d.value !== 0 ? (d.value >= 1000000 ? fmt(d.value/1000000).replace('$','$') + 'M' : fmt(d.value/1000) + 'k') : '—';
+    out += `<g>
+      <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="5" fill="${color}" opacity="${d.isCurrent?1:.7}"/>
+      <text x="${x+barW/2}" y="${y-4}" text-anchor="middle" fill="var(--muted)" font-size="9" font-family="Space Grotesk">${d.value !== 0 ? (d.value>=0?'':'-')+'$'+(Math.abs(d.value)>=1000000?(Math.abs(d.value)/1000000).toFixed(1)+'M':(Math.abs(d.value)/1000).toFixed(0)+'k') : ''}</text>
+      <text x="${x+barW/2}" y="108" text-anchor="middle" fill="var(--muted)" font-size="9.5" font-family="Nunito">${d.label}</text>
+    </g>`;
+  });
+  svg.innerHTML = out;
+}
+
+/* ══════════════════════════════════════════════════════
+   SIMULATOR
+══════════════════════════════════════════════════════ */
+function setPill(group, val, el) {
+  document.querySelectorAll(`[data-group="${group}"]`).forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  state.sim[group] = val;
+  calcSim();
+}
+
+function toggleEnvioGratis() {
+  const on = $('sim-envio-gratis').checked;
+  $('fulfillment-row').style.display = on ? '' : 'none';
+  if (!on) $('sim-fulfillment').checked = false;
+}
+
+function calcSim() {
+  const precio    = parseFloat($('sim-precio')?.value) || 0;
+  const costo     = parseFloat($('sim-costo')?.value)  || 0;
+  const cat       = $('sim-categoria')?.value || 'general';
+  const tipo      = state.sim.tipo || 'clasica';
+  const envioGratis   = $('sim-envio-gratis')?.checked || false;
+  const fulfillment   = $('sim-fulfillment')?.checked  || false;
+
+  if (!precio) { $('sim-result-wrap').innerHTML = ''; $('bep-wrap').innerHTML=''; return; }
+
+  let comisionPct = 0;
+  if (tipo === 'gratuita') comisionPct = 0;
+  else if (tipo === 'clasica')  comisionPct = COMISIONES[cat]?.clasica  || 0.135;
+  else if (tipo === 'premium')  comisionPct = COMISIONES[cat]?.premium  || 0.16;
+
+  const comision  = precio * comisionPct;
+  const cfijo     = tipo === 'gratuita' ? 0 : costoFijo(precio);
+  const envio     = envioGratis ? (fulfillment ? precio * 0.03 : precio * 0.045) : 0;
+
+  const p = state.perfil;
+  const gastosMes = p ? [p.gasto_alquiler,p.gasto_empleados,p.gasto_servicios,
+    p.gasto_logistica,p.gasto_suscripciones,p.gasto_otros].reduce((s,v)=>s+(v||0),0) : 0;
+  const propGastos = gastosMes > 0 ? gastosMes / 30 : 0;
+
+  const ganancia = precio - comision - cfijo - envio - costo - propGastos;
+  const margen   = precio > 0 ? ganancia / precio : 0;
+
+  const color = margen > 0.2 ? 'green' : margen >= 0.1 ? 'yellow' : 'red';
+
+  $('sim-result-wrap').innerHTML = `
+    <div class="sim-result">
+      <div class="sim-result-header">
+        <div class="sim-result-title">Ganancia neta por unidad</div>
+        <div class="sim-net ${color}">${fmt(ganancia)}</div>
+        <div class="sim-margin">Margen: ${fmtPct(margen)} · ${margen>0.2?'✅ Bien':'⚠️ Revisalo'}</div>
+      </div>
+      <div class="sim-breakdown">
+        <div class="sim-row"><span class="sim-row-label">Precio de venta</span><span class="sim-row-val">${fmt(precio)}</span></div>
+        <div class="sim-row"><span class="sim-row-label">− Comisión ML (${fmtPct(comisionPct)})</span><span class="sim-row-val neg">${fmt(-comision)}</span></div>
+        ${cfijo>0?`<div class="sim-row"><span class="sim-row-label">− Costo fijo por unidad</span><span class="sim-row-val neg">${fmt(-cfijo)}</span></div>`:''}
+        ${envio>0?`<div class="sim-row"><span class="sim-row-label">− Costo de envío estimado</span><span class="sim-row-val neg">${fmt(-envio)}</span></div>`:''}
+        <div class="sim-row"><span class="sim-row-label">− Costo del producto</span><span class="sim-row-val neg">${fmt(-costo)}</span></div>
+        ${propGastos>0?`<div class="sim-row"><span class="sim-row-label">− Proporción gastos fijos</span><span class="sim-row-val neg">${fmt(-propGastos)}</span></div>`:''}
+        <div class="sim-row total">
+          <span class="sim-row-label">= Ganancia neta</span>
+          <span class="sim-row-val ${ganancia>=0?'pos':'neg'}">${fmt(ganancia)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (gastosMes > 0 && ganancia > 0) {
+    const bep = Math.ceil(gastosMes / ganancia);
+    $('bep-wrap').innerHTML = `
+      <div class="bep-box">
+        <div class="bep-label">Punto de equilibrio</div>
+        <div class="bep-value">Necesitás vender <b>${bep}</b> unidades este mes para cubrir tus gastos fijos</div>
+      </div>
+    `;
+  } else { $('bep-wrap').innerHTML = ''; }
+}
+
+/* ══════════════════════════════════════════════════════
+   CIERRE MENSUAL
+══════════════════════════════════════════════════════ */
+async function renderCierre() {
+  const { mes, anio } = state.period;
+  $('cierre-subtitle').textContent = `${MESES[mes-1]} ${anio}`;
+  if (!state.cierres.length) { setLoading(true); await loadCierres(); setLoading(false); }
+  const cierre = getCierreActual();
+  const modo = cierre?.modo || 'estimado';
+  $('cierre-badge').innerHTML = badgeHTML(modo);
+  const prev = state.cierres.find(c => {
+    const pm = mes === 1 ? 12 : mes-1;
+    const py = mes === 1 ? anio-1 : anio;
+    return c.mes === pm && c.anio === py;
+  });
+
+  const secA = cierre ? `
+    <div class="cierre-section">
+      <div class="cierre-section-header">
+        <span class="cierre-section-title">A — Datos de Mercado Libre</span>
+        ${badgeHTML(modo)}
+      </div>
+      ${row('Ventas realizadas', cierre.ingresos_brutos)}
+      ${row('Comisiones cobradas por ML', cierre.comisiones_ml, true)}
+      ${row('Costo de envíos', cierre.costo_envios, true)}
+      ${row('Devoluciones y reembolsos', cierre.devoluciones, true)}
+      ${row('ML Ads', cierre.ml_ads, true)}
+      ${row('Percepciones IIBB', cierre.percepciones_iibb, true)}
+      ${cierre.iva_retenido ? row('IVA retenido', cierre.iva_retenido, true) : ''}
+    </div>
+  ` : `
+    <div class="cierre-section">
+      <div class="cierre-section-header"><span class="cierre-section-title">A — Datos de Mercado Libre</span></div>
+      <div class="empty-state" style="padding:24px">
+        <div class="empty-icon">🔗</div>
+        <div class="empty-title" style="font-size:.95rem">Sin datos de ML</div>
+        <div class="empty-sub">Conectá tu cuenta desde Perfil o subí la liquidación para ver estos datos.</div>
+      </div>
+    </div>
+  `;
+
+  const secB = `
+    <div class="cierre-input-section">
+      <p class="section-title">B — Tus costos del mes</p>
+      <div class="field">
+        <label>Costo de mercadería vendida</label>
+        <input type="number" id="ci-mercaderia" placeholder="0" value="${cierre?.costo_mercaderia||''}" oninput="autosaveCierre()" min="0">
+      </div>
+      <div class="field">
+        <label>Gastos variables del mes</label>
+        <input type="number" id="ci-gastos-var" placeholder="Packaging, reparaciones, otros" value="${cierre?.gastos_variables||''}" oninput="autosaveCierre()" min="0">
+      </div>
+      <div class="field">
+        <label>Ingresos por otros canales</label>
+        <input type="number" id="ci-otros-ing" placeholder="Instagram, local, etc." value="${cierre?.otros_ingresos||''}" oninput="autosaveCierre()" min="0">
+      </div>
+      <div class="field">
+        <label>Retiro del dueño</label>
+        <input type="number" id="ci-retiro" placeholder="0" value="${cierre?.retiro_duenio||''}" oninput="autosaveCierre()" min="0">
+      </div>
+    </div>
+  `;
+
+  const net = cierre?.ganancia_neta ?? null;
+  const prevNet = prev?.ganancia_neta ?? null;
+  let compareHTML = '';
+  if (net !== null && prevNet !== null) {
+    const diff = net - prevNet;
+    const diffPct = prevNet !== 0 ? (diff/Math.abs(prevNet)*100).toFixed(1) : '—';
+    const sign = diff >= 0 ? '+' : '';
+    compareHTML = `<div class="cierre-result-compare">El mes pasado: ${fmt(prevNet)} · Este mes: ${sign}${diffPct}%</div>`;
+  }
+  const netColor = net === null ? 'var(--muted)' : net >= 0 ? 'var(--ok)' : 'var(--error)';
+
+  const secResult = `
+    <div class="cierre-result-box">
+      <div class="cierre-result-label">Ganancia neta real del mes</div>
+      <div class="cierre-result-net" style="color:${netColor}">${net !== null ? fmt(net) : '—'}</div>
+      ${compareHTML}
+    </div>
+  `;
+
+  const btnCierre = modo !== 'verificado' ? `
+    <div style="padding:0 0 8px">
+      <button class="btn btn-primary" onclick="openUploadModal()">
+        📂 Subir liquidación y cerrar el mes
+      </button>
+    </div>
+  ` : `
+    <div style="padding:0 0 8px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:14px 16px;background:rgba(76,184,122,.08);border:1px solid rgba(76,184,122,.2);border-radius:var(--radius-s)">
+        <span style="font-size:1.2rem">✅</span>
+        <span style="font-size:.875rem;font-weight:700;color:var(--ok)">Cierre oficial verificado</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="window.print()">Exportar resumen PDF</button>
+    </div>
+  `;
+
+  $('cierre-body').innerHTML = secA + secB + secResult + btnCierre;
+}
+
+function row(label, val, neg=false) {
+  return `<div class="cierre-data-row">
+    <span class="cierre-data-label">${neg?'− ':''} ${label}</span>
+    <span class="cierre-data-val${neg?' neg':''}">${neg?fmt(-val):fmt(val)}</span>
+  </div>`;
+}
+
+let autosaveTimer;
+function autosaveCierre() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async () => {
+    const { mes, anio } = state.period;
+    const cierre = getCierreActual() || {};
+    const payload = {
+      mes, anio,
+      modo: cierre.modo || 'estimado',
+      ingresos_brutos:   cierre.ingresos_brutos   || 0,
+      comisiones_ml:     cierre.comisiones_ml      || 0,
+      costo_envios:      cierre.costo_envios       || 0,
+      devoluciones:      cierre.devoluciones       || 0,
+      ml_ads:            cierre.ml_ads             || 0,
+      percepciones_iibb: cierre.percepciones_iibb  || 0,
+      iva_retenido:      cierre.iva_retenido       || 0,
+      costo_mercaderia:  parseFloat($('ci-mercaderia')?.value)  || 0,
+      gastos_variables:  parseFloat($('ci-gastos-var')?.value)  || 0,
+      otros_ingresos:    parseFloat($('ci-otros-ing')?.value)   || 0,
+      retiro_duenio:     parseFloat($('ci-retiro')?.value)      || 0,
+    };
+    try { await saveCierre(payload); } catch(_) {}
+  }, 1000);
+}
+
+/* ══════════════════════════════════════════════════════
+   UPLOAD LIQUIDACIÓN
+══════════════════════════════════════════════════════ */
+function openUploadModal() {
+  $('modal-upload').classList.add('show');
+  state.pendingFile = null;
+  $('upload-text').textContent = 'Tocá para elegir el archivo';
+  $('btn-process-file').style.display = 'none';
+  $('file-input').value = '';
+}
+function closeUploadModal(e) {
+  if (e && e.target !== $('modal-upload')) return;
+  $('modal-upload').classList.remove('show');
+}
+
+function handleFileDrop(e) {
+  e.preventDefault();
+  $('upload-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) prepareFile(file);
+}
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) prepareFile(file);
+}
+function prepareFile(file) {
+  state.pendingFile = file;
+  $('upload-text').textContent = `✓ ${file.name}`;
+  $('btn-process-file').style.display = '';
+}
+
+async function processLiquidacion() {
+  const file = state.pendingFile;
+  if (!file) return;
+  setLoading(true);
+  try {
+    let parsed;
+    if (file.name.endsWith('.csv')) {
+      const text = await file.text();
+      parsed = parseCSV(text);
+    } else {
+      const buf = await file.arrayBuffer();
+      parsed = parseExcel(buf);
+    }
+    if (!parsed) throw new Error('No pudimos leer el archivo. Revisá que sea el formato correcto.');
+
+    const { mes, anio } = state.period;
+    const cierre = getCierreActual() || {};
+    const payload = {
+      mes, anio, modo: 'verificado',
+      ingresos_brutos:   parsed.ingresos_brutos   ?? cierre.ingresos_brutos   ?? 0,
+      comisiones_ml:     parsed.comisiones_ml      ?? cierre.comisiones_ml     ?? 0,
+      costo_envios:      parsed.costo_envios        ?? cierre.costo_envios      ?? 0,
+      devoluciones:      parsed.devoluciones        ?? cierre.devoluciones      ?? 0,
+      ml_ads:            parsed.ml_ads              ?? cierre.ml_ads            ?? 0,
+      percepciones_iibb: parsed.percepciones_iibb   ?? cierre.percepciones_iibb ?? 0,
+      iva_retenido:      parsed.iva_retenido         ?? cierre.iva_retenido     ?? 0,
+      costo_mercaderia:  parseFloat($('ci-mercaderia')?.value)  || cierre.costo_mercaderia  || 0,
+      gastos_variables:  parseFloat($('ci-gastos-var')?.value)  || cierre.gastos_variables  || 0,
+      otros_ingresos:    parseFloat($('ci-otros-ing')?.value)   || cierre.otros_ingresos    || 0,
+      retiro_duenio:     parseFloat($('ci-retiro')?.value)      || cierre.retiro_duenio     || 0,
+    };
+
+    if (sb && state.user?.id !== 'demo') {
+      const path = `${state.user.id}/${anio}-${mes}-liquidacion.${file.name.split('.').pop()}`;
+      await sb.storage.from('liquidaciones').upload(path, file, { upsert: true });
+      payload.archivo_liquidacion_url = path;
+    }
+
+    await saveCierre(payload);
+    $('modal-upload').classList.remove('show');
+    showToast('¡Mes cerrado oficialmente! Los números son verificados ✓');
+    renderCierre();
+  } catch(e) {
+    showToast(e.message || 'Error al procesar el archivo', 'err');
+  } finally { setLoading(false); }
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n').map(l => l.split(',').map(c => c.trim().replace(/"/g,'')));
+  const result = {};
+  const MAP = {
+    'ventas': 'ingresos_brutos',
+    'acreditaciones': 'ingresos_brutos',
+    'comisiones': 'comisiones_ml',
+    'envios': 'costo_envios',
+    'devoluciones': 'devoluciones',
+    'publicidad': 'ml_ads',
+    'iibb': 'percepciones_iibb',
+    'iva': 'iva_retenido',
+  };
+  lines.forEach(cols => {
+    const label = (cols[0]||'').toLowerCase();
+    const val = parseFloat((cols[1]||'').replace(/\./g,'').replace(',','.'));
+    if (isNaN(val)) return;
+    for (const [key, field] of Object.entries(MAP)) {
+      if (label.includes(key)) { result[field] = (result[field]||0) + Math.abs(val); }
+    }
+  });
+  return Object.keys(result).length ? result : null;
+}
+
+function parseExcel(buffer) {
+  try {
+    if (typeof XLSX === 'undefined') return null;
+    const wb = XLSX.read(buffer, { type:'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1 });
+    return parseCSV(rows.map(r => r.join(',')).join('\n'));
+  } catch(_) { return null; }
+}
+
+/* ══════════════════════════════════════════════════════
+   PERFIL
+══════════════════════════════════════════════════════ */
+async function renderPerfil() {
+  if (!state.cierres.length) await loadCierres();
+  const p = state.perfil || {};
+  const gastos = [p.gasto_alquiler,p.gasto_empleados,p.gasto_servicios,
+                  p.gasto_logistica,p.gasto_suscripciones,p.gasto_otros].reduce((s,v)=>s+(v||0),0);
+  const mlConnected = !!p.ml_access_token;
+  const historyRows = state.cierres.slice(0,12).map(c => `
+    <div class="history-row">
+      <div>
+        <div class="history-month">${MESES[c.mes-1]} ${c.anio}</div>
+        ${badgeHTML(c.modo)}
+      </div>
+      <span class="history-net ${(c.ganancia_neta||0)>=0?'pos':'neg'}">${fmt(c.ganancia_neta)}</span>
+    </div>
+  `).join('') || '<div style="padding:20px;text-align:center;color:var(--muted);font-size:.875rem">Todavía no tenés cierres guardados</div>';
+
+  $('perfil-body').innerHTML = `
+    <div class="perfil-section">
+      <div class="perfil-section-header"><span class="perfil-section-title">Mi negocio</span></div>
+      <div class="perfil-section-body">
+        <div class="field"><label>Nombre del negocio</label>
+          <input type="text" id="pf-nombre" value="${p.nombre_negocio||''}" placeholder="Nombre">
+        </div>
+        <div class="field"><label>Condición fiscal</label>
+          <select id="pf-fiscal" onchange="togglePfMono()">
+            <option value="">Seleccioná</option>
+            <option value="monotributista" ${p.condicion_fiscal==='monotributista'?'selected':''}>Monotributista</option>
+            <option value="responsable_inscripto" ${p.condicion_fiscal==='responsable_inscripto'?'selected':''}>Responsable Inscripto</option>
+          </select>
+        </div>
+        <div class="field" id="pf-mono-field" style="${p.condicion_fiscal==='monotributista'?'':'display:none'}">
+          <label>Categoría monotributo</label>
+          <select id="pf-mono-cat">
+            ${['A','B','C','D','E','F','G','H','I','J','K'].map(c=>`<option value="${c}" ${p.categoria_mono===c?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Provincia</label>
+          <input type="text" id="pf-provincia" value="${p.provincia||''}" placeholder="Provincia">
+        </div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="savePfNegocio()">Guardar cambios</button>
+      </div>
+    </div>
+
+    <div class="perfil-section">
+      <div class="perfil-section-header"><span class="perfil-section-title">Gastos fijos mensuales · ${fmt(gastos)}</span></div>
+      <div class="perfil-section-body">
+        ${pfGastoField('pf-alquiler','Alquiler',p.gasto_alquiler)}
+        ${pfGastoField('pf-empleados','Empleados',p.gasto_empleados)}
+        ${pfGastoField('pf-servicios','Servicios',p.gasto_servicios)}
+        ${pfGastoField('pf-logistica','Logística',p.gasto_logistica)}
+        ${pfGastoField('pf-suscripciones','Suscripciones',p.gasto_suscripciones)}
+        ${pfGastoField('pf-otros','Otros',p.gasto_otros)}
+        <button class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="savePfGastos()">Guardar gastos</button>
+      </div>
+    </div>
+
+    <div class="perfil-section">
+      <div class="perfil-section-header"><span class="perfil-section-title">Cuenta de Mercado Libre</span></div>
+      <div class="ml-status-box">
+        <div class="ml-dot ${mlConnected?'connected':'disconnected'}"></div>
+        <div class="ml-status-text">
+          <div class="ml-status-name">${mlConnected?'Cuenta conectada':'Sin conectar'}</div>
+          <div class="ml-status-sub">${mlConnected?'Traemos tus ventas automáticamente':'Conectá para sincronizar ventas'}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="width:auto" onclick="connectML()">${mlConnected?'Reconectar':'Conectar'}</button>
+      </div>
+    </div>
+
+    <div class="perfil-section">
+      <div class="perfil-section-header"><span class="perfil-section-title">Historial de cierres</span></div>
+      <div class="stagger">${historyRows}</div>
+    </div>
+
+    <div style="padding:0 0 8px">
+      <button class="btn btn-danger btn-sm" onclick="confirmLogout()">Cerrar sesión</button>
+    </div>
+    <div style="height:8px"></div>
+  `;
+}
+
+function pfGastoField(id, label, val) {
+  return `<div class="field"><label>${label}</label><input type="number" id="${id}" value="${val||''}" placeholder="0" min="0"></div>`;
+}
+
+function togglePfMono() {
+  $('pf-mono-field').style.display = $('pf-fiscal').value === 'monotributista' ? '' : 'none';
+}
+
+async function savePfNegocio() {
+  setLoading(true);
+  try {
+    await savePerfil({
+      nombre_negocio:    $('pf-nombre').value.trim(),
+      condicion_fiscal:  $('pf-fiscal').value,
+      categoria_mono:    $('pf-mono-cat')?.value || '',
+      provincia:         $('pf-provincia').value.trim(),
+    });
+    showToast('Datos del negocio guardados ✓');
+  } catch(e) { showToast('Error al guardar', 'err'); }
+  finally { setLoading(false); }
+}
+
+async function savePfGastos() {
+  setLoading(true);
+  try {
+    await savePerfil({
+      gasto_alquiler:       parseFloat($('pf-alquiler')?.value)||0,
+      gasto_empleados:      parseFloat($('pf-empleados')?.value)||0,
+      gasto_servicios:      parseFloat($('pf-servicios')?.value)||0,
+      gasto_logistica:      parseFloat($('pf-logistica')?.value)||0,
+      gasto_suscripciones:  parseFloat($('pf-suscripciones')?.value)||0,
+      gasto_otros:          parseFloat($('pf-otros')?.value)||0,
+    });
+    showToast('Gastos actualizados ✓');
+    renderPerfil();
+  } catch(e) { showToast('Error al guardar', 'err'); }
+  finally { setLoading(false); }
+}
+
+function confirmLogout() {
+  if (confirm('¿Seguro que querés cerrar sesión?')) doLogout();
+}
+
+/* ══════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════ */
+async function init() {
+  // Check ML OAuth callback
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('code')) {
+    window.history.replaceState({}, '', window.location.pathname);
+    const code = params.get('code');
+    const preScreen = localStorage.getItem('mlclaro_pre_oauth_screen') || 'onboarding';
+    localStorage.removeItem('mlclaro_pre_oauth_screen');
+    setLoading(true);
+    if (sb) {
+      const { data } = await sb.auth.getSession();
+      if (data?.session) {
+        state.user = data.session.user;
+        await loadPerfil();
+        await handleMLCallback(code);
+        navigate(preScreen);
+        setLoading(false);
+        return;
+      }
+    }
+    setLoading(false);
+  }
+
+  if (!sb) {
+    navigate('auth');
+    showToast('Modo demo — Supabase no configurado', 'warn');
+    return;
+  }
+
+  setLoading(true);
+  const { data } = await sb.auth.getSession();
+  if (data?.session) {
+    state.user = data.session.user;
+    await afterLogin();
+  } else {
+    navigate('auth');
+  }
+  setLoading(false);
+
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      state.user = session.user;
+    } else if (event === 'SIGNED_OUT') {
+      state.user = null;
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+// Enter key on auth inputs
+['login-email','login-pass'].forEach(id => {
+  document.getElementById(id)?.addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+});
+['reg-email','reg-pass','reg-pass2'].forEach(id => {
+  document.getElementById(id)?.addEventListener('keydown', e => { if(e.key==='Enter') doRegister(); });
+});
+</script>
+</body>
+</html>
